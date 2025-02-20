@@ -19,6 +19,8 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "spi.h"
+#include "tim.h"
 #include "usart.h"
 #include "gpio.h"
 
@@ -87,7 +89,18 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART2_UART_Init();
+  MX_SPI1_Init();
+  MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
+
+  uint8_t TxData[3] = {0x01, 0x80, 0x0};
+  uint8_t RxData[3] = {};
+  int timerPeriod = htim1.Init.Period;
+  int ADC_Value = 0;
+
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1); //starts the PWM signal generation using timer 1
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_8, GPIO_PIN_SET); //Pull the CS line high to ensure that it can be pulled low later on
+
 
   /* USER CODE END 2 */
 
@@ -95,6 +108,25 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_8,GPIO_PIN_RESET); //pulls CS line low to start communication
+
+	  HAL_SPI_TransmitReceive(&hspi1, TxData, RxData, 3, 10);//initiates SPI communication with the ADC
+
+	  HAL_GPIO_WritePin(GPIOB,GPIO_PIN_8, GPIO_PIN_SET);//pulls the CS line high again to end communication
+
+	  /*
+	  extracts the last 2 bits of RxData[1] which are the first 2,
+	  most significant, bits of the ADC result,using & and then shifts them left by 8 bits.
+	  Then, the following 8 bits of the 10 bit result are added in the 8 bit space following the first two bits using |
+	  */
+	  ADC_Value = ((RxData[1] & 0x03) << 8 | RxData[2]);
+
+	  //converts ADC value to a pulse width that corresponds to a duty cycle ranging from 5-10%
+	  int pulse_width = (5 + (5 * ADC_Value)/1023) * timerPeriod;
+
+	  __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1, pulse_width); //sets the PWM pulse width to the desired value
+
+	  HAL_Delay(10);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
